@@ -7,7 +7,6 @@ from consumers import AbsConsumer
 from publishers import AbsPublisher
 
 
-# TODO: What if a processing function throws an exception
 # TODO: Direct logs coming from containers to Comet
 
 
@@ -114,6 +113,7 @@ class RunnerV1(LoggerMixin):
                         self.logger.info(
                             f"Job for {thread.name} is still running"
                         )
+
             # Run a quick check to make sure everything works as intended
             # Remove after debugging?
             self._check_errors()
@@ -161,6 +161,7 @@ class RunnerV1(LoggerMixin):
         return True
 
     def _complete_processing_job(self, thread: threading.Thread) -> bool:
+        # TODO: How do I check if the thread has thrown an exception?
         thread.join(timeout=0.5)
         if thread.is_alive():  # timed out
             return False

@@ -8,8 +8,7 @@ from publishers import AbsPublisher
 
 
 # TODO: What is a provided validator or processing function throws an exception
-# TODO: Use publisher to signal message processing completion
-# TODO: Use publisher to direct logs from the processing container?
+# TODO: Direct logs coming from containers to Comet
 
 
 class RunnerV1(LoggerMixin):
@@ -38,7 +37,7 @@ class RunnerV1(LoggerMixin):
 
     def __init__(
             self,
-            concur_messages: int,
+            concur_processing_jobs: int,
             consumer: AbsConsumer,
             publisher: AbsPublisher,
             message_validator: t.Callable[[str], bool],
@@ -46,7 +45,7 @@ class RunnerV1(LoggerMixin):
     ) -> None:
         LoggerMixin.__init__(self, "RunnerV1")
 
-        self._concur_messages = concur_messages
+        self._concur_messages = concur_processing_jobs
         if not isinstance(consumer, AbsConsumer):
             raise TypeError(
                 "Provide a consumer implementing the AbsConsumer interface"
@@ -87,7 +86,6 @@ class RunnerV1(LoggerMixin):
                     self._currently_being_processed < self._concur_messages
                     and not self._to_stop
             ):
-                self.logger.info("Attempting to start a new processing job")
                 slots = self._concur_messages - self._currently_being_processed
                 while slots and (self._attempted_starts < self._max_attempts):
                     started = self._start_processing_job()
@@ -110,6 +108,8 @@ class RunnerV1(LoggerMixin):
                         )
                         self._running_threads.remove(thread)
                         self._currently_being_processed -= 1
+                        self._total_messages_processed += 1
+                        self._publisher.send_message(thread.name)
                     else:
                         self.logger.info(
                             f"Job for {thread.name} is still running"
@@ -135,7 +135,6 @@ class RunnerV1(LoggerMixin):
         message = self._consumer.get_message()
         if not message:
             return False
-        self.logger.info(f"Got message: {message}")
         # Validate the message to ensure it is what we expect
         validated = self._message_validator(message)
         if not validated:
@@ -143,7 +142,6 @@ class RunnerV1(LoggerMixin):
                 f"Failed to validate the message: {message}"
             )
             return False
-        self.logger.info("Message validated")
         # Start processing the message in a separate thread
         processing_thread = threading.Thread(
             target=lambda: self._message_processor(message), name=message

@@ -5,4 +5,4 @@ class AzurePublisher(AbsPublisher):
         pass
 
     def send_message(self, message: str) -> None:
-        pass
+        print(f"MESSAGE SENT {message}")

@@ -7,6 +7,11 @@ from consumers.abstract_consumer import AbsConsumer
 from helpers import LoggerMixin
 
 
+# TODO: Reformat the consumer
+'''
+Why the fuck I cannot reuse the same receiver instance? 
+'''
+
 class AzureConsumer(LoggerMixin, AbsConsumer):
 
     def __init__(
@@ -49,9 +54,15 @@ class AzureConsumer(LoggerMixin, AbsConsumer):
         except Exception as e:
             self.logger.exception("Exception instantiating AzureConsumer")
             raise e
+        self._being_processed_messages = {}
         self.logger.info("AzureConsumer initialized")
 
-    def get_message(self) -> t.Optional[str]:
+    def get_message(self) -> t.Tuple[t.Optional[str], t.Optional[str]]:
+        """
+        Attempts to get a message from the queue
+        Returns message content and its ID for subsequent acknowledgement if
+        it was successfully processed
+        """
         # TODO: Creating an instance of receiver every time I need a message is
         #       super fucking annoying. Fix
         with self._bus_client:
@@ -62,8 +73,28 @@ class AzureConsumer(LoggerMixin, AbsConsumer):
             try:
                 msg = next(iter(receiver))
             except StopIteration:
-                return None
-            content = str(msg.message)
-            # TODO: Uncomment me
-            # receiver.complete_message(msg)
-            return content
+                return None, None
+            message_id = str(msg.message_id)
+            message_content = str(msg.message)
+            self._being_processed_messages[message_id] = msg
+            return message_content, message_id
+
+    def acknowledge_message(self, message_id: str) -> None:
+        """
+        If the message was successfully processed, delete it from the queue
+        """
+        if message_id not in self._being_processed_messages:
+            raise KeyError(
+                f"The key {message_id} doesn't belong to any messages!"
+            )
+        # TODO: Creating an instance of receiver every time I need to use it is
+        #       super fucking annoying. Fix
+        with self._bus_client:
+            receiver: ServiceBusReceiver = self._bus_client.get_queue_receiver(
+                self._queue_name, max_wait_time=self._timeout
+            )
+            receiver.complete_message(
+                self._being_processed_messages[message_id]
+            )
+            self._being_processed_messages.pop(message_id)
+            self.logger.info(f"Acknowledged message {message_id}")

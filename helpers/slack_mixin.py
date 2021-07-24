@@ -25,19 +25,20 @@ class SlackMixin:
     def slack_msg(self, msg: str) -> None:
         if not msg:
             return
-
-        slack_data = {
-            "text": f"{self._project} | {msg}" if self._project else msg
-        }
-        response = requests.post(
-            url=self._webhook,
-            data=json.dumps(slack_data),
-            headers={"Content-Type": "application/json"},
-        )
-        if response.status_code != 200:
-            raise ValueError(
-                f"Request to the slack server is unsuccessful."
-                f"Error: {response.status_code}, "
-                f"Response: {response.text}"
-            )
-        return
+        # TODO: Fix me
+        print(f"SLACK :: {msg}")
+        # slack_data = {
+        #     "text": f"{self._project} | {msg}" if self._project else msg
+        # }
+        # response = requests.post(
+        #     url=self._webhook,
+        #     data=json.dumps(slack_data),
+        #     headers={"Content-Type": "application/json"},
+        # )
+        # if response.status_code != 200:
+        #     raise ValueError(
+        #         f"Request to the slack server is unsuccessful."
+        #         f"Error: {response.status_code}, "
+        #         f"Response: {response.text}"
+        #     )
+        # return

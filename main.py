@@ -18,7 +18,6 @@ class App(LoggerMixin, SlackMixin):
             concur_processing_jobs: int
     ) -> None:
         LoggerMixin.__init__(self, "App")
-        SlackMixin.__init__(self, webhook_url="hook")
 
         if (
                 not isinstance(concur_processing_jobs, int)

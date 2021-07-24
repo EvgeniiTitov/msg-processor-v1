@@ -7,7 +7,7 @@ from consumers import AbsConsumer
 from publishers import AbsPublisher
 
 
-# TODO: What is a provided validator or processing function throws an exception
+# TODO: What if a processing function throws an exception
 # TODO: Direct logs coming from containers to Comet
 
 
@@ -135,8 +135,17 @@ class RunnerV1(LoggerMixin):
         message = self._consumer.get_message()
         if not message:
             return False
+
         # Validate the message to ensure it is what we expect
-        validated = self._message_validator(message)
+        validated = False
+        try:
+            validated = self._message_validator(message)
+        except Exception as e:
+            self.logger.exception(
+                f"Provided message validator throws an error: {e}"
+            )
+            self._healthy = False
+
         if not validated:
             self.logger.warning(
                 f"Failed to validate the message: {message}"

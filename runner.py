@@ -1,41 +1,34 @@
 import time
 import typing as t
 
-from helpers import LoggerMixin, CustomThread, SlackMixin
+from helpers import LoggerMixin, CustomThread
 from consumers import AbsConsumer
 from publishers import AbsPublisher
 
 
-# TODO: Direct logs coming from containers to Comet
-# TODO: If state not healthy, stop processing messages and ask for fixing on slack
-
 ProcessingRes = t.Tuple[bool, t.Optional[bool], t.Optional[str]]
 
 
-class RunnerV1(LoggerMixin, SlackMixin):
+class RunnerV1(LoggerMixin):
     """
-    The class that processes messages.
+    The runner class that uses Consumer, Publisher and message processor
+    and validator provided to process messages.
 
-    Both consumer and producer can be swapped out provided that they implement
-    the appropriate interfaces.
+    Both consumer and producer can be swapped out by a different type (say
+    RabbitMQ or whatever) provided that they implement the appropriate
+    interfaces that the RunnerV1 relies on.
 
-    Message validator - validates the received image is correct and what we
-    expect to get
+    Message validator - validates the received message format is correct
+    Message processor - processes a received and validated message
 
-    Message processor - processed the received and validated message
-
-    N messages could be processed at the same time. For each image a new thread
-    gets created as the processing is heavily IO bound and comes down to
+    N messages could be processed at the same time. For each message a new
+    thread gets created as the processing is heavily IO bound and comes down to
     pulling and running appropriate docker containers with parameters received
     in the message.
 
-    Message processing logic:
-        - Using the consumer provided, get a message by calling get_message()
-        - Validate the image
-        - Process the image
-        - Report completion of message processing using the publisher
+    A message does not get acknowledged (deleted from the queue) unless it
+    was successfully processed
     """
-
     def __init__(
             self,
             concur_processing_jobs: int,
@@ -46,7 +39,7 @@ class RunnerV1(LoggerMixin, SlackMixin):
     ) -> None:
         LoggerMixin.__init__(self, "RunnerV1")
 
-        self._concur_messages = concur_processing_jobs
+        self._concur_msg_limit = concur_processing_jobs
         if not isinstance(consumer, AbsConsumer):
             raise TypeError(
                 "Provide a consumer implementing the AbsConsumer interface"
@@ -58,6 +51,7 @@ class RunnerV1(LoggerMixin, SlackMixin):
                 "Provide a publisher implementing the AbsPublisher interface"
             )
         self._publisher = publisher
+
         # Custom validation and processing functions
         self._message_validator = message_validator
         self._message_processor = message_processor
@@ -70,6 +64,7 @@ class RunnerV1(LoggerMixin, SlackMixin):
         self._running_threads: t.List[CustomThread] = []
         self._attempted_starts = 0
         self._max_attempts = 1
+        self._latest_issues = []
         self.logger.info("RunnerV1 initialized")
 
     @property
@@ -80,17 +75,21 @@ class RunnerV1(LoggerMixin, SlackMixin):
     def messages_processed(self) -> int:
         return self._total_messages_processed
 
+    @property
+    def latest_issues(self) -> t.Optional[t.List[str]]:
+        return self._latest_issues if len(self._latest_issues) else None
+
     def process_messages(self) -> None:
         time.sleep(1)
         while True:
-            # Check if there are available slots to start a new processing job
-            # and then start one
+            # Check if there is capacity to start processing a new message if
+            # any. Attempt receiving a message without blocking using timeout
             if (
-                    self._currently_being_processed < self._concur_messages
+                    self._currently_being_processed < self._concur_msg_limit
                     and not self._to_stop
                     and self._healthy
             ):
-                self._process_new_messages()
+                self._attempt_processing_new_messages()
 
             # Check if any processing jobs have completed
             if len(self._running_threads):
@@ -100,6 +99,9 @@ class RunnerV1(LoggerMixin, SlackMixin):
             # Remove after debugging?
             self._check_runtime_errors()
 
+            # If a runtime issue happened, attempt stopping the runner
+            if not self._healthy:
+                self.stop()
             if self._to_stop:
                 if self._currently_being_processed:
                     self.logger.info(
@@ -111,23 +113,24 @@ class RunnerV1(LoggerMixin, SlackMixin):
             else:
                 time.sleep(1)
 
-    def _process_new_messages(self) -> None:
-        slots = self._concur_messages - self._currently_being_processed
+    def _attempt_processing_new_messages(self) -> None:
+        slots = self._concur_msg_limit - self._currently_being_processed
         while slots and (self._attempted_starts < self._max_attempts):
             # If the queue is empty or received message was not validated
             # the processing won't start
-            started = self._process_new_message()
-            if started:
+            ok = self._receive_and_launch_processing()
+            if ok:
                 slots -= 1
                 self._currently_being_processed += 1
             else:
-                self.logger.info("Failed start attempt")
+                self.logger.info("Failed to start processing job")
                 self._attempted_starts += 1
         self._attempted_starts = 0
 
-    def _process_new_message(self) -> bool:
-        self.logger.info("Attempting to receive a message")
-        # Attempt to get a message from the consumer without blocking
+    def _receive_and_launch_processing(self) -> bool:
+        self.logger.info("Checking for messages in the queue")
+        # Attempt to get a message and its ID from the consumer within timeout
+        # ID is required to acknowledge the message if processed successfully
         message, message_id = self._consumer.get_message()
         if not message:
             return False
@@ -139,8 +142,7 @@ class RunnerV1(LoggerMixin, SlackMixin):
         except Exception as e:
             msg = f"Provided custom message validator throws the error: {e}"
             self.logger.exception(msg)
-            self.slack_msg(msg)
-            self._healthy = False
+            self._add_new_issue(msg)
             return False
 
         if not validated:
@@ -149,7 +151,7 @@ class RunnerV1(LoggerMixin, SlackMixin):
             )
             return False
 
-        # Process the message using the provided message processor function
+        # Launch message processing using the provided message processor func
         self._messages_being_processed[message] = message_id
         processing_thread = CustomThread(
             function=lambda: self._message_processor(message),
@@ -157,7 +159,6 @@ class RunnerV1(LoggerMixin, SlackMixin):
         )
         processing_thread.start()
         self._running_threads.append(processing_thread)
-
         self.logger.info(f"Started processing the message: {message}")
         return True
 
@@ -165,6 +166,7 @@ class RunnerV1(LoggerMixin, SlackMixin):
         self.logger.info("Checking if any jobs have completed")
         for thread in self._running_threads:
             message = thread.message
+
             # Attempt joining the processing thread and checking if
             # it ran successfully
             (
@@ -172,28 +174,27 @@ class RunnerV1(LoggerMixin, SlackMixin):
                 success,
                 err
             ) = self._join_thread(thread)
-            # If the thread was joined, reflect the changes
+
+            # If the thread has finished, process the results
             if completed:
-                self.logger.info(
-                    f"Processing of the msg {message} has completed"
-                )
+                self.logger.info(f"Processing of msg {message} completed")
                 self._running_threads.remove(thread)
                 self._currently_being_processed -= 1
+
                 # Reflect on the processing status
                 if success:
                     self._total_messages_processed += 1
+                    # Give consumer message ID to acknowledge its completion
+                    # (aka delete from the queue)
                     self._consumer.acknowledge_message(
-                        self._messages_being_processed[message]
+                        self._messages_being_processed.pop(message)
                     )
-                    self._messages_being_processed.pop(message)
                     self._publisher.send_message(message)
                 else:
-                    self.slack_msg(
-                        f"Failed to process message {message}. "
-                        f"Error: {err}"
+                    self._add_new_issue(
+                        f"Failed to process message {message}. Error: {err}"
                     )
                     self._messages_being_processed.pop(message)
-                    self._healthy = False
             else:
                 self.logger.info(
                     f"Job for {message} is still running"
@@ -201,10 +202,10 @@ class RunnerV1(LoggerMixin, SlackMixin):
 
     def _join_thread(self, thread: CustomThread) -> ProcessingRes:
         """
-        Returns: has the job completed, did the code run successfully
-        aka didn't throw any exceptions, error message if any occurred
+        Returns: has the thread finished, did the processing run successfully,
+        error message if any occurred
         """
-        # TODO: This is ugly, I dont like it
+        # TODO: This is ugly AF, I don't like it
         # A thread running custom message processor could potentially throw
         # an error, handle it
         try:
@@ -213,35 +214,41 @@ class RunnerV1(LoggerMixin, SlackMixin):
             msg = f"For message {thread.message} provided message " \
                   f"processor function has thrown an error: {e}"
             self.logger.exception(msg)
+
             if thread.is_alive():
-                return False, False, None
+                return False, False, msg
             else:
                 return True, False, msg
 
         if thread.is_alive():  # timed out
-            return False, None, None  # Result is not available yet
+            return False, None, None  # Result is not available yet, running
         else:
             return True, True, None
 
     def stop(self) -> None:
         self._to_stop = True
 
+    def _add_new_issue(self, issue: str) -> None:
+        if self._healthy:
+            self._healthy = False
+        if len(self._latest_issues) < 10:
+            self._latest_issues.append(issue)
+
     def _check_runtime_errors(self) -> None:
         # TODO: Remove me after testing
         running_threads = len(self._running_threads)
         if running_threads != self._currently_being_processed:
-            self.logger.error(
-                f"Number of running threads {running_threads} do not match the"
-                f" number of running jobs {self._currently_being_processed}"
-            )
-            self._healthy = False
+            msg = f"N of running threads {running_threads} != " \
+                  f"N of running jobs {self._currently_being_processed}"
+            self.logger.error(msg)
+            self._add_new_issue(msg)
 
         if self._currently_being_processed < 0:
-            self.logger.error("Processing negative number of jobs!")
-            self._healthy = False
+            msg = "Processing negative number of jobs!"
+            self.logger.error(msg)
+            self._add_new_issue(msg)
 
         if self._currently_being_processed != len(self._messages_being_processed):
-            self.logger.error(
-                "Number of message keys != counter "
-                "of messages being processed"
-            )
+            msg = "Number of message IDs != N of messages being processed"
+            self.logger.error(msg)
+            self._add_new_issue(msg)

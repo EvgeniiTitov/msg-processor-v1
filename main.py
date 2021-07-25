@@ -1,91 +1,38 @@
-import sys
-import time
-import threading
+import argparse
 
-from helpers import LoggerMixin, SlackMixin
-from runner import RunnerV1
-from consumers import AzureConsumer
-from publishers import AzurePublisher
-from message_validator import validate_message
-from message_processor import process_message
+from app import App
 
 
-class App(LoggerMixin, SlackMixin):
-
-    def __init__(
-            self,
-            sleep_time_between_health_reports: int,
-            concur_processing_jobs: int
-    ) -> None:
-        LoggerMixin.__init__(self, "App")
-
-        if (
-                not isinstance(concur_processing_jobs, int)
-                or concur_processing_jobs <= 0
-        ):
-            raise ValueError("Concurrent messages to be a positive integer")
-        self._concurrent_messages = concur_processing_jobs
-
-        if (
-                not isinstance(sleep_time_between_health_reports, int) or
-                sleep_time_between_health_reports <= 0
-        ):
-            raise ValueError("Sleeping time to be a positive integer")
-        self._sleep = sleep_time_between_health_reports
-
-        consumer = AzureConsumer()
-        self.logger.info("Consumer initialized")
-
-        publisher = AzurePublisher()
-        self.logger.info("Publisher initialized")
-
-        # Any essential part of the runner be it consumer/publisher or
-        # validator/processor could be swapped out to modify the logic as long
-        # as the objects conform to the interfaces
-        self._processor = RunnerV1(
-            concur_processing_jobs=concur_processing_jobs,
-            consumer=consumer,
-            publisher=publisher,
-            message_validator=validate_message,
-            message_processor=process_message
-        )
-        self.logger.info(f"Runner initialized")
-
-        self._processor_thread = threading.Thread(
-            target=self._processor.process_messages
-        )
-        self._processor_thread.start()
-        self.logger.info("Runner thread started")
-
-    def run(self) -> None:
-        while True:
-            time.sleep(self._sleep)
-            self._report_health()
-
-    def _report_health(self) -> None:
-        processor_healthy = self._processor.is_healthy
-        messages_processed = self._processor.messages_processed
-        msg = (
-            f"Feeling good. Processed {messages_processed} messages"
-            if processor_healthy else
-            "Something's wrong with the processor"
-        )
-        # self.slack_msg(msg)
-        print(msg)
-
-    def stop_processor(self) -> None:
-        self._processor.stop()
-        self._processor_thread.join()
-        self.logger.info("Processor stopped")
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--concurrent_messages",
+        type=int,
+        default=1,
+        help="Number of messages that could be processed concurrently"
+    )
+    parser.add_argument(
+        "--report_every",
+        type=int,
+        default=30,
+        help="How often a slack message will be sent reporting the condition"
+    )
+    return parser.parse_args()
 
 
-if __name__ == '__main__':
+def main() -> int:
+    args = parse_args()
     app = App(
-        sleep_time_between_health_reports=10,
-        concur_processing_jobs=2
+        sleep_time_between_health_reports=args.report_every,
+        concur_processing_jobs=args.concurrent_messages
     )
     try:
         app.run()
     except KeyboardInterrupt:
         app.stop_processor()
-        sys.exit(0)
+
+    return 0
+
+
+if __name__ == '__main__':
+    main()

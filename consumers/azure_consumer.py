@@ -7,6 +7,9 @@ from consumers.abstract_consumer import AbsConsumer
 from helpers import LoggerMixin
 
 
+# TODO: 1. Check out yield to avoid leaving the context?
+# TODO: 2. Redefine __enter__ as a method and then call it manually, then call close()
+
 
 class AzureConsumer(LoggerMixin, AbsConsumer):
 

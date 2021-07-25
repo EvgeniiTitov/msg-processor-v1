@@ -9,6 +9,9 @@ from publishers import AbsPublisher
 ProcessingRes = t.Tuple[bool, t.Optional[bool], t.Optional[str]]
 
 
+# TODO: You could use workers to launch and finish jobs
+
+
 class RunnerV1(LoggerMixin):
     """
     The runner class that uses Consumer, Publisher and message processor
@@ -140,6 +143,7 @@ class RunnerV1(LoggerMixin):
 
         # Validate the message using the provided validator callback function
         # to ensure it is what we expect
+        # TODO: Consider a class with __call__() for custom validator
         try:
             validated = self._message_validator(message)
         except Exception as e:

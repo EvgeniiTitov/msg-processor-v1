@@ -114,7 +114,7 @@ class RunnerV1(LoggerMixin):
                 else:
                     break
             else:
-                time.sleep(1)
+                time.sleep(3)
 
     def _attempt_processing_new_messages(self) -> None:
         slots = self._concur_msg_limit - self._currently_being_processed

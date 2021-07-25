@@ -6,7 +6,7 @@ from runner import RunnerV1
 from consumers import AzureConsumer
 from publishers import AzurePublisher
 from message_validator import validate_message
-from message_processor import process_message
+from message_processor import process_message_using_docker_image_sample_1
 
 
 class App(LoggerMixin, SlackMixin):
@@ -49,7 +49,7 @@ class App(LoggerMixin, SlackMixin):
             consumer=consumer,
             publisher=publisher,
             message_validator=validate_message,
-            message_processor=process_message
+            message_processor=process_message_using_docker_image_sample_1
         )
         self.logger.info(f"Runner initialized")
 

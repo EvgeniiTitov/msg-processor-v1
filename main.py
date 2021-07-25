@@ -17,6 +17,11 @@ def parse_args() -> argparse.Namespace:
         default=30,
         help="How often a slack message will be sent reporting the condition"
     )
+    parser.add_argument(
+        "--acknowledge_messages",
+        action="store_true",
+        help="Delete messages from the queue upon successful processing"
+    )
     return parser.parse_args()
 
 
@@ -24,7 +29,8 @@ def main() -> int:
     args = parse_args()
     app = App(
         sleep_time_between_health_reports=args.report_every,
-        concur_processing_jobs=args.concurrent_messages
+        concur_processing_jobs=args.concurrent_messages,
+        acknowledgement_required=args.acknowledge_messages
     )
     try:
         app.run()

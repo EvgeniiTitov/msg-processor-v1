@@ -32,6 +32,8 @@ class RunnerV1(LoggerMixin):
     def __init__(
             self,
             concur_processing_jobs: int,
+            acknowledgement_required: bool,
+            *,
             consumer: AbsConsumer,
             publisher: AbsPublisher,
             message_validator: t.Callable[[str], bool],
@@ -56,6 +58,7 @@ class RunnerV1(LoggerMixin):
         self._message_validator = message_validator
         self._message_processor = message_processor
 
+        self._acknowledge_required = acknowledgement_required
         self._healthy = True
         self._to_stop = False
         self._total_messages_processed = 0
@@ -184,11 +187,12 @@ class RunnerV1(LoggerMixin):
                 # Reflect on the processing status
                 if success:
                     self._total_messages_processed += 1
+                    message_id = self._messages_being_processed.pop(message)
+
                     # Give consumer message ID to acknowledge its completion
-                    # (aka delete from the queue)
-                    self._consumer.acknowledge_message(
-                        self._messages_being_processed.pop(message)
-                    )
+                    if self._acknowledge_required:
+                        self._consumer.acknowledge_message(message_id)
+
                     self._publisher.send_message(message)
                 else:
                     self._add_new_issue(

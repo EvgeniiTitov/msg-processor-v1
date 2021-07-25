@@ -18,7 +18,8 @@ class App(LoggerMixin, SlackMixin):
     def __init__(
             self,
             sleep_time_between_health_reports: int,
-            concur_processing_jobs: int
+            concur_processing_jobs: int,
+            acknowledgement_required: bool
     ) -> None:
         LoggerMixin.__init__(self, "App")
 
@@ -44,6 +45,7 @@ class App(LoggerMixin, SlackMixin):
 
         self._runner = RunnerV1(
             concur_processing_jobs=concur_processing_jobs,
+            acknowledgement_required=acknowledgement_required,
             consumer=consumer,
             publisher=publisher,
             message_validator=validate_message,

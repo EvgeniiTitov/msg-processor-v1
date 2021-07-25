@@ -7,10 +7,6 @@ from consumers.abstract_consumer import AbsConsumer
 from helpers import LoggerMixin
 
 
-# TODO: Reformat the consumer
-'''
-Why the fuck I cannot reuse the same receiver instance? 
-'''
 
 class AzureConsumer(LoggerMixin, AbsConsumer):
 

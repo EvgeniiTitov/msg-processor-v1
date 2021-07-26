@@ -1,7 +1,7 @@
 import time
 
 
-'''
+"""
 Here a message processing function could be defined
 
 For my purposes, this function need to start an appropriate docker image
@@ -9,12 +9,12 @@ with correct arguments that come in the message received
 
 The message processor function is to be tested manually. Should it fail when
 passed to the App instance, the entire App goes down
-'''
+"""
 
 
 def process_message_using_docker_image_sample_1(
-        message: str,
-        required_docker_image: str = "sample-message-processor:latest"
+    message: str,
+    required_docker_image: str = "sample-message-processor:latest",
 ) -> None:
     """
     Receives a message, parses it, and then launches an appropriate docker
@@ -32,10 +32,9 @@ def process_message_using_docker_image_sample_1(
         raise e
 
     images = client.images.list()
-    required_image_present = (
-            required_docker_image
-            in [image.tags[0] for image in images if image.tags]
-    )
+    required_image_present = required_docker_image in [
+        image.tags[0] for image in images if image.tags
+    ]
     if not required_image_present:
         print("Pulling the required image")
         try:
@@ -53,7 +52,7 @@ def process_message_using_docker_image_sample_1(
     container = client.containers.run(
         required_docker_image,
         f"--iterate_till {kube_id}",  # Here comes the parsed message
-        detach=True
+        detach=True,
     )
     print(f"Started the container. Its ID: {container.id}")
     for line in container.logs(stream=True):
@@ -70,5 +69,5 @@ def process_message(message: str) -> None:
     return
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     process_message_using_docker_image_sample_1("14;d;f")

@@ -3,9 +3,8 @@ import typing as t
 
 
 class AbsConsumer(ABC):
-
     @abstractmethod
-    def get_message(self) -> t.Optional[str]:
+    def get_message(self) -> t.Tuple[t.Optional[str], t.Optional[str]]:
         ...
 
     @abstractmethod

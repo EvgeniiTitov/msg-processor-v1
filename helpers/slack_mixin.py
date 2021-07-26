@@ -7,9 +7,9 @@ import requests
 
 class SlackMixin:
     def __init__(
-            self,
-            webhook_url: t.Optional[str] = None,
-            project_name: t.Optional[str] = None
+        self,
+        webhook_url: t.Optional[str] = None,
+        project_name: t.Optional[str] = None,
     ) -> None:
         if webhook_url:
             self._webhook = webhook_url

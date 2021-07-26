@@ -3,6 +3,7 @@ import time
 
 # Nice one python
 
+
 def do_some_work():
     print("Doing some work")
     time.sleep(5)
@@ -26,5 +27,6 @@ def main():
     print("Keep working...")
     time.sleep(2)
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     main()

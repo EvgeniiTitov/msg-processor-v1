@@ -4,7 +4,8 @@ import os
 from azure.servicebus import (
     ServiceBusClient,
     ServiceBusReceiver,
-    AutoLockRenewer
+    AutoLockRenewer,
+    ServiceBusMessage,
 )
 
 from consumers.abstract_consumer import AbsConsumer
@@ -17,6 +18,7 @@ class CustomServiceBusClient(ServiceBusClient):
     bus client and the queue receiver in the constructor, so that they
     can be reused in both get_message() and acknowledge_message() methods
     """
+
     def enter(self):
         if self._connection_sharing:
             self._create_uamqp_connection()
@@ -26,13 +28,12 @@ class CustomServiceBusClient(ServiceBusClient):
 
 
 class AzureConsumer(LoggerMixin, AbsConsumer):
-
     def __init__(
-            self,
-            connection_str: t.Optional[str] = None,
-            queue_name: t.Optional[str] = None,
-            timeout: int = 10,
-            logging_enable: bool = False
+        self,
+        connection_str: t.Optional[str] = None,
+        queue_name: t.Optional[str] = None,
+        timeout: int = 10,
+        logging_enable: bool = False,
     ) -> None:
         LoggerMixin.__init__(self, "AzureConsumer")
 
@@ -61,7 +62,7 @@ class AzureConsumer(LoggerMixin, AbsConsumer):
         self._timeout = timeout
 
         self._logging_enable = logging_enable
-        self._being_processed_messages = {}
+        self._being_processed_messages: t.Dict[str, ServiceBusMessage] = {}
 
         try:
             self._client = CustomServiceBusClient.from_connection_string(

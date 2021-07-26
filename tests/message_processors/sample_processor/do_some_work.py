@@ -4,11 +4,7 @@ import time
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
-    parser.add_argument(
-        "--iterate_till",
-        type=int,
-        default=100
-    )
+    parser.add_argument("--iterate_till", type=int, default=100)
     return parser.parse_args()
 
 
@@ -28,5 +24,5 @@ def main():
     print("THE RESULT:", the_sum)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

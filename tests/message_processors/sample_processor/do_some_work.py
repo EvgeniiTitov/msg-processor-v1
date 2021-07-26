@@ -4,7 +4,7 @@ import time
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--iterate_till", default=100)
+    parser.add_argument("--iterate_till", type=int, default=100)
     return parser.parse_args()
 
 
@@ -20,6 +20,8 @@ def real_busy_stuff(iterations):
 def main():
     args = parse_args()
     iterations = args.iterate_till
+    if iterations == 101:
+        raise Exception("Intentional test fail!")
     the_sum = real_busy_stuff(iterations)
     print("THE RESULT:", the_sum)
 

@@ -20,11 +20,6 @@ def process_message_using_docker_image_sample_1(
     Receives a message, parses it, and then launches an appropriate docker
     image with appropriate arguments received in the message
     """
-    # TODO: What if container fails or freezes? I need to somehow report it
-    # TODO: How to handle docker authentication to pull image from AzureCR?
-    # TODO: I need to check if I have the latest version locally
-    # TODO: Its message_processor's job to check if container has failed and
-    #       then raise an exception!
     import docker
 
     try:
@@ -33,41 +28,46 @@ def process_message_using_docker_image_sample_1(
         print(f"Failed to init docker client. Error: {e}")
         raise e
 
+    # TODO: For now it is assumed the image required is present locally and
+    #       is of correct version (latest) - authentication/AzureSDK issues
     images = client.images.list()
     required_image_present = required_docker_image in [
         image.tags[0] for image in images if image.tags
     ]
     if not required_image_present:
-        print("Pulling the required image")
-        try:
-            client.images.pull(required_docker_image)
-        except Exception as e:
-            print(f"Failed to pull the requested image. Error: {e}")
-            raise e
+        raise NotImplementedError("Docker image pulling not implemented")
+        # print("Pulling the required image")
+        # try:
+        #     client.images.pull(required_docker_image)
+        # except Exception as e:
+        #     print(f"Failed to pull the requested image. Error: {e}")
+        #     raise e
     else:
         print("Image found locally")
 
-    print("Parsing the message")
     kube_id, _, _ = message.split(";")
 
-    print("Attempting to run the image")
-    container = client.containers.run(
-        required_docker_image,
-        f"--iterate_till {kube_id}",  # Here comes the parsed message
-        detach=True,
+    """
+    A container could be run in detached mode, then .run() return Container, 
+    else the calling is blocking and returns logs
+    """
+    container_logs = client.containers.run(
+        image=required_docker_image,
+        command=f"--iterate_till {kube_id}",  # Here comes the parsed message
+        remove=True,
     )
-    print(f"Started the container. Its ID: {container.id}")
-    for line in container.logs(stream=True):
-        # TODO: Forward logs to Comet
-        print(line.strip())
+    print("\n\nLOGS:", container_logs)
+    # TODO: Upload logs to Comet
 
-    container.remove()
+    # TODO: What if container fails or freezes? I need to somehow report it -
+    #       throw an exception here that must be handles by the runner
+    #       Check container status? Check the logs?
 
 
-def process_message(message: str) -> None:
+def dummy_process_message(message: str) -> None:
     for i in range(10):
         time.sleep(1)
-        print(f"BUSILY PROCESSING THE MESSAGE LMAO! {message} - {0}/{i}")
+        print(f"BUSILY PROCESSING THE MESSAGE! {message} - {0}/{i}")
     return
 
 

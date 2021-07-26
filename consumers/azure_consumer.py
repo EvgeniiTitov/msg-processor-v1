@@ -98,7 +98,7 @@ class AzureConsumer(LoggerMixin, AbsConsumer):
             return None, None
         # Register the message with the lock renewer
         self._lock_renewer.register(
-            self._receiver, msg, max_lock_renewal_duration=6000
+            self._receiver, msg, max_lock_renewal_duration=6000.0
         )
         message_id = str(msg.message_id)
         message_content = str(msg.message)
@@ -120,6 +120,6 @@ class AzureConsumer(LoggerMixin, AbsConsumer):
 
     def __del__(self):
         if self._client:
-            self._client.close()
+            self._client.exit()
         if self._lock_renewer:
             self._lock_renewer.close()

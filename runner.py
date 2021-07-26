@@ -1,7 +1,7 @@
 import time
 import typing as t
 
-from helpers import LoggerMixin, CustomThread
+from helpers import LoggerMixin, CustomThread, SlackMixin
 from consumers import AbsConsumer
 from publishers import AbsPublisher
 
@@ -9,7 +9,7 @@ from publishers import AbsPublisher
 ProcessingRes = t.Tuple[bool, t.Optional[bool], t.Optional[str]]
 
 
-class RunnerV1(LoggerMixin):
+class RunnerV1(LoggerMixin, SlackMixin):
     """
     The runner class that uses Consumer, Publisher and message processor
     and validator provided to process messages.
@@ -41,6 +41,7 @@ class RunnerV1(LoggerMixin):
         message_processor: t.Callable[[str], None],
     ) -> None:
         LoggerMixin.__init__(self, "RunnerV1")
+        SlackMixin.__init__(self, project_name="PostConvValidation")
 
         self._concur_msg_limit = concur_processing_jobs
         if not isinstance(consumer, AbsConsumer):
@@ -115,6 +116,7 @@ class RunnerV1(LoggerMixin):
                     self.logger.info(
                         "Waiting for running jobs to complete before quitting"
                     )
+                    time.sleep(2)
                     continue
                 else:
                     break
@@ -217,6 +219,7 @@ class RunnerV1(LoggerMixin):
                         self._consumer.acknowledge_message(message_id)
 
                     self._publisher.send_message(message)
+                    self.slack_msg(f"Processed message: {message[:30]}")
                 else:
                     self._add_new_issue(err)  # type: ignore
                     self._messages_being_processed.pop(message)

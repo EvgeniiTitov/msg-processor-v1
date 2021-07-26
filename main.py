@@ -1,5 +1,4 @@
 import argparse
-import sys
 
 from app import App
 
@@ -9,6 +8,8 @@ from app import App
 #       3. Work on the message_processor - debug a container fails
 #       4. Push code to the new repo
 #       5. Update README
+#       6. Bug - mismatch of N jobs running and msg getting processed
+#       7. Bug - when processing multiple messages, lock gets expired?!
 
 
 def parse_args() -> argparse.Namespace:
@@ -43,11 +44,8 @@ def main() -> int:
     try:
         app.run()
     except KeyboardInterrupt:
-        app.stop_processor()
-        sys.exit(0)
-
+        pass
     app.stop_processor()
-
     return 0
 
 

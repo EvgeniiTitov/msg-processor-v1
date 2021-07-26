@@ -9,9 +9,6 @@ from publishers import AbsPublisher
 ProcessingRes = t.Tuple[bool, t.Optional[bool], t.Optional[str]]
 
 
-# TODO: You could use workers to launch and finish jobs
-
-
 class RunnerV1(LoggerMixin):
     """
     The runner class that uses Consumer, Publisher and message processor
@@ -86,6 +83,9 @@ class RunnerV1(LoggerMixin):
         return self._latest_issues if len(self._latest_issues) else None
 
     def process_messages(self) -> None:
+        """
+        Main processing loop
+        """
         time.sleep(1)
         while True:
             # Check if there is capacity to start processing a new message if
@@ -95,7 +95,7 @@ class RunnerV1(LoggerMixin):
                     and not self._to_stop
                     and self._healthy
             ):
-                self._attempt_processing_new_messages()
+                self._check_queue_and_process_new_messages()
 
             # Check if any processing jobs have completed
             if len(self._running_threads):
@@ -117,32 +117,42 @@ class RunnerV1(LoggerMixin):
                 else:
                     break
             else:
-                time.sleep(3)
+                time.sleep(5)
 
-    def _attempt_processing_new_messages(self) -> None:
+    def _check_queue_and_process_new_messages(self) -> None:
+        """
+        If more than 1 message can be processed concurrently, the function
+        tries to fill in available processing slots.
+        To avoid blocking on this step, it attempts to start processing N
+        number of times before giving up and moving on
+
+        # TODO: Could be implemented as a separate worker checking the queue
+                and trying to start message processing if there's capacity
+        """
         slots = self._concur_msg_limit - self._currently_being_processed
         while slots and (self._attempted_starts < self._max_attempts):
-            # If the queue is empty or received message was not validated
-            # the processing won't start
-            ok = self._receive_and_launch_processing()
+            ok = self._receive_validate_launch_processing()
             if ok:
                 slots -= 1
                 self._currently_being_processed += 1
             else:
-                self.logger.info("Failed to start processing job")
                 self._attempted_starts += 1
         self._attempted_starts = 0
 
-    def _receive_and_launch_processing(self) -> bool:
-        self.logger.info("Checking for messages in the queue")
+    def _receive_validate_launch_processing(self) -> bool:
+        """
+        Asks the consumer for a message. If the consumer timed out -> no
+        message in the queue
+        """
         # Attempt to get a message and its ID from the consumer within timeout
         # ID is required to acknowledge the message if processed successfully
         message, message_id = self._consumer.get_message()
         if not message:
+            self.logger.info("No messages in the queue")
             return False
 
         # Validate the message using the provided validator callback function
-        # to ensure it is what we expect
+        # to ensure it is what we expect (format/content wise)
         # TODO: Consider a class with __call__() for custom validator
         try:
             validated = self._message_validator(message)
@@ -154,11 +164,12 @@ class RunnerV1(LoggerMixin):
 
         if not validated:
             self.logger.info(
-                f"Failed to validate the message: {message}"
+                f"Failed to validate the received message: {message}"
             )
             return False
 
-        # Launch message processing using the provided message processor func
+        # Launch message processing using the provided callback message
+        # processor function
         self._messages_being_processed[message] = message_id
         processing_thread = CustomThread(
             function=lambda: self._message_processor(message),
@@ -166,16 +177,23 @@ class RunnerV1(LoggerMixin):
         )
         processing_thread.start()
         self._running_threads.append(processing_thread)
+
         self.logger.info(f"Started processing the message: {message}")
         return True
 
     def _finalize_processing_jobs(self) -> None:
+        """
+        Checks currently running processing jobs to see if any has completed
+        or encountered any issues
+        # TODO: Could be implemented as a separate worker checking the
+                processing jobs every M amount of time
+        """
         self.logger.info("Checking if any jobs have completed")
         for thread in self._running_threads:
             message = thread.message
 
             # Attempt joining the processing thread and checking if
-            # it ran successfully
+            # the processing job ran successfully
             (
                 completed,
                 success,
@@ -210,14 +228,18 @@ class RunnerV1(LoggerMixin):
 
     def _join_thread(self, thread: CustomThread) -> ProcessingRes:
         """
-        Returns: has the thread finished, did the processing run successfully,
-        error message if any occurred
+        Tries to join a thread. If it still runs, then join was unsuccessful,
+        hence the processing job is still running
+        Returns:
+            (
+            has the thread finished,
+            was processing run successful,
+            error message if any occurred
+            )
         """
-        # TODO: This is ugly AF, I don't like it
-        # A thread running custom message processor could potentially throw
-        # an error, handle it
+        # TODO: This is ugly AF, I don't like it. Retest it
         try:
-            thread.join(timeout=0.5)
+            thread.join(timeout=1.0)
         except Exception as e:
             msg = f"For message {thread.message} provided message " \
                   f"processor function has thrown an error: {e}"

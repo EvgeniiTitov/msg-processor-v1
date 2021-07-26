@@ -66,7 +66,6 @@ class RunnerV1(LoggerMixin, SlackMixin):
         self._to_stop = False
         self._total_messages_processed = 0
         self._currently_being_processed = 0
-        self._messages_being_processed: t.Dict[str, str] = {}
         self._running_threads: t.List[CustomThread] = []
         self._attempted_starts = 0
         self._max_attempts = 1
@@ -85,14 +84,14 @@ class RunnerV1(LoggerMixin, SlackMixin):
     def latest_issues(self) -> t.List[str]:
         return self._latest_issues
 
-    def process_messages(self) -> None:
+    def process_messages_loop(self) -> None:
         """
         Main processing loop
         """
         time.sleep(1)
         while True:
-            # Check if there is capacity to start processing a new message if
-            # any. Attempt receiving a message without blocking using timeout
+            # Non blocking check if there is capacity to start processing new
+            # messages awaiting in the message queue
             if (
                 self._currently_being_processed < self._concur_msg_limit
                 and not self._to_stop
@@ -135,6 +134,7 @@ class RunnerV1(LoggerMixin, SlackMixin):
                 and trying to start message processing if there's capacity
         """
         slots = self._concur_msg_limit - self._currently_being_processed
+        self._attempted_starts = 0
         while slots and (self._attempted_starts < self._max_attempts):
             ok = self._receive_validate_launch_processing()
             if ok:
@@ -142,7 +142,6 @@ class RunnerV1(LoggerMixin, SlackMixin):
                 self._currently_being_processed += 1
             else:
                 self._attempted_starts += 1
-        self._attempted_starts = 0
 
     def _receive_validate_launch_processing(self) -> bool:
         """
@@ -167,6 +166,8 @@ class RunnerV1(LoggerMixin, SlackMixin):
             self._add_new_issue(msg)
             return False
 
+        # The received message might not conform the format/rules we could have
+        # for messages, so we do not want to process it
         if not validated:
             self.logger.info(
                 f"Failed to validate the received message: {message}"
@@ -174,11 +175,11 @@ class RunnerV1(LoggerMixin, SlackMixin):
             return False
 
         # Launch message processing using the provided callback message
-        # processor function
-        self._messages_being_processed[message] = message_id  # type: ignore
+        # processor function. The message gets associated with a thread
         processing_thread = CustomThread(
             function=lambda: self._message_processor(message),  # type: ignore
             message=message,
+            message_id=message_id,  # type: ignore
         )
         processing_thread.start()
         self._running_threads.append(processing_thread)
@@ -195,7 +196,7 @@ class RunnerV1(LoggerMixin, SlackMixin):
         """
         for thread in self._running_threads:
             message = thread.message
-
+            message_id = thread.message_id
             # Attempt joining the processing thread and checking if
             # the processing job ran successfully
             (completed, success, err) = self._join_thread(thread)
@@ -212,8 +213,6 @@ class RunnerV1(LoggerMixin, SlackMixin):
                 # Reflect on the processing status
                 if success:
                     self._total_messages_processed += 1
-                    message_id = self._messages_being_processed.pop(message)
-
                     # Give consumer message ID to acknowledge its completion
                     if self._acknowledge_required:
                         self._consumer.acknowledge_message(message_id)
@@ -222,7 +221,6 @@ class RunnerV1(LoggerMixin, SlackMixin):
                     self.slack_msg(f"Processed message: {message[:30]}")
                 else:
                     self._add_new_issue(err)  # type: ignore
-                    self._messages_being_processed.pop(message)
             else:
                 self.logger.info(f"Job for {message[:30]} running")
 
@@ -233,7 +231,7 @@ class RunnerV1(LoggerMixin, SlackMixin):
         Returns:
             (
             has the thread finished,
-            was processing run successful,
+            was processing successful,
             error message if any occurred
             )
         """
@@ -246,11 +244,10 @@ class RunnerV1(LoggerMixin, SlackMixin):
                 f"processor function has thrown an error: {e}"
             )
             self.logger.exception(msg)
-            # if thread.is_alive():
-            #     return False, False, msg
-            # else:
-            #     return True, False, msg
-            return True, False, msg
+            if thread.is_alive():
+                return False, False, msg
+            else:
+                return True, False, msg
 
         if thread.is_alive():  # timed out
             return False, None, None  # Result is not available yet, running
@@ -279,15 +276,5 @@ class RunnerV1(LoggerMixin, SlackMixin):
 
         if self._currently_being_processed < 0:
             msg = "Processing negative number of jobs!"
-            self.logger.error(msg)
-            self._add_new_issue(msg)
-
-        if self._currently_being_processed != len(
-            self._messages_being_processed
-        ):
-            msg = (
-                f"Number of message IDs {self._messages_being_processed} != "
-                f"N of messages being processed {self._currently_being_processed}"
-            )
             self.logger.error(msg)
             self._add_new_issue(msg)

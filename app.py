@@ -39,17 +39,17 @@ class App(LoggerMixin, SlackMixin):
             raise ValueError("Sleeping time to be a positive integer")
         self._sleep = sleep_time_between_health_reports
 
-        consumer = AzureConsumer()
+        self._consumer = AzureConsumer()
         self.logger.info("Consumer initialized")
 
-        publisher = AzurePublisher()
+        self._publisher = AzurePublisher()
         self.logger.info("Publisher initialized")
 
         self._runner = RunnerV1(
             concur_processing_jobs=concur_processing_jobs,
             acknowledgement_required=acknowledgement_required,
-            consumer=consumer,
-            publisher=publisher,
+            consumer=self._consumer,
+            publisher=self._publisher,
             message_validator=validate_message,
             message_processor=process_message_using_docker_image_sample_1,
         )
@@ -85,3 +85,4 @@ class App(LoggerMixin, SlackMixin):
         self._runner.stop()
         self._processor_thread.join()
         self.logger.info("Runner stopped")
+        del self._consumer  # Force resource release

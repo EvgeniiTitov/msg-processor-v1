@@ -56,12 +56,13 @@ def process_message_using_docker_image_sample_1(
         command=f"--iterate_till {kube_id}",  # Here comes the parsed message
         remove=True,
     )
-    print("\n\nLOGS:", container_logs)
+    print("\n\nLOGS:", container_logs.decode("utf-8"))
     # TODO: Upload logs to Comet
 
     # TODO: What if container fails or freezes? I need to somehow report it -
     #       throw an exception here that must be handles by the runner
     #       Check container status? Check the logs?
+    client.close()
 
 
 def dummy_process_message(message: str) -> None:

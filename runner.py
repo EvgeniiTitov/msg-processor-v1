@@ -59,6 +59,7 @@ class RunnerV1(LoggerMixin):
         self._message_validator = message_validator
         self._message_processor = message_processor
 
+        self._is_running = True
         self._acknowledge_required = acknowledgement_required
         self._healthy = True
         self._to_stop = False
@@ -119,6 +120,7 @@ class RunnerV1(LoggerMixin):
                     break
             else:
                 time.sleep(5)
+        self._is_running = False
 
     def _check_queue_and_process_new_messages(self) -> None:
         """
@@ -189,7 +191,6 @@ class RunnerV1(LoggerMixin):
         # TODO: Could be implemented as a separate worker checking the
                 processing jobs every M amount of time
         """
-        self.logger.info("Checking if any jobs have completed")
         for thread in self._running_threads:
             message = thread.message
 
@@ -199,7 +200,10 @@ class RunnerV1(LoggerMixin):
 
             # If the thread has finished, process the results
             if completed:
-                self.logger.info(f"Processing of msg {message} completed")
+                self.logger.info(
+                    f"Processing of msg {message} completed "
+                    f"{'successfully' if success else 'unsuccessfully'}"
+                )
                 self._running_threads.remove(thread)
                 self._currently_being_processed -= 1
 
@@ -214,12 +218,10 @@ class RunnerV1(LoggerMixin):
 
                     self._publisher.send_message(message)
                 else:
-                    self._add_new_issue(
-                        f"Failed to process message {message}. Error: {err}"
-                    )
+                    self._add_new_issue(err)  # type: ignore
                     self._messages_being_processed.pop(message)
             else:
-                self.logger.info(f"Job for {message} is still running")
+                self.logger.info(f"Job for {message[:30]} running")
 
     def _join_thread(self, thread: CustomThread) -> ProcessingRes:
         """
@@ -241,11 +243,11 @@ class RunnerV1(LoggerMixin):
                 f"processor function has thrown an error: {e}"
             )
             self.logger.exception(msg)
-
-            if thread.is_alive():
-                return False, False, msg
-            else:
-                return True, False, msg
+            # if thread.is_alive():
+            #     return False, False, msg
+            # else:
+            #     return True, False, msg
+            return True, False, msg
 
         if thread.is_alive():  # timed out
             return False, None, None  # Result is not available yet, running
@@ -258,7 +260,7 @@ class RunnerV1(LoggerMixin):
     def _add_new_issue(self, issue: str) -> None:
         if self._healthy:
             self._healthy = False
-        if len(self._latest_issues) < 10:
+        if len(self._latest_issues) < 10 and issue not in self._latest_issues:
             self._latest_issues.append(issue)
 
     def _check_runtime_errors(self) -> None:
@@ -280,6 +282,9 @@ class RunnerV1(LoggerMixin):
         if self._currently_being_processed != len(
             self._messages_being_processed
         ):
-            msg = "Number of message IDs != N of messages being processed"
+            msg = (
+                f"Number of message IDs {self._messages_being_processed} != "
+                f"N of messages being processed {self._currently_being_processed}"
+            )
             self.logger.error(msg)
             self._add_new_issue(msg)

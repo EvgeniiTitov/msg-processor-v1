@@ -23,6 +23,8 @@ def process_message_using_docker_image_sample_1(
     # TODO: What if container fails or freezes? I need to somehow report it
     # TODO: How to handle docker authentication to pull image from AzureCR?
     # TODO: I need to check if I have the latest version locally
+    # TODO: Its message_processor's job to check if container has failed and
+    #       then raise an exception!
     import docker
 
     try:

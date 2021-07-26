@@ -23,6 +23,7 @@ class App(LoggerMixin, SlackMixin):
         acknowledgement_required: bool,
     ) -> None:
         LoggerMixin.__init__(self, "App")
+        SlackMixin.__init__(self, project_name="PostConvValidation")
 
         if (
             not isinstance(concur_processing_jobs, int)
@@ -64,16 +65,19 @@ class App(LoggerMixin, SlackMixin):
         while True:
             time.sleep(self._sleep)
             self._report_health()
+            if not self._runner._is_running:
+                break
+        self.logger.info("The app has completed")
 
     def _report_health(self) -> None:
         processor_healthy = self._runner.is_healthy
         messages_processed = self._runner.messages_processed
         latest_issues = self._runner.latest_issues
         msg = (
-            f"Feeling good. Processed {messages_processed} messages"
+            f"\nFeeling good. Processed {messages_processed} messages"
             if processor_healthy
             else f"Feeling bad. The  following issues were encountered:\n"
-            f"{' '.join(latest_issues)}"
+            f"\n{' '.join(latest_issues)}"
         )
         self.slack_msg(msg)
 

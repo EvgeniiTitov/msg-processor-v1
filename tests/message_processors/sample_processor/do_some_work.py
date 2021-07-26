@@ -4,7 +4,7 @@ import time
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--iterate_till", type=int, default=100)
+    parser.add_argument("--iterate_till", default=100)
     return parser.parse_args()
 
 

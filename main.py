@@ -3,13 +3,9 @@ import argparse
 from app import App
 
 
-# TODO: 1. Receiver doesnt release resources if fails
-#       2. Test the target set test script manually on the TPU
-#       3. Work on the message_processor - debug a container fails
-#       4. Push code to the new repo
-#       5. Update README
-#       6. Bug - mismatch of N jobs running and msg getting processed
-#       7. Bug - when processing multiple messages, lock gets expired?!
+# TODO: 1. Work on the message_processor - debug a container fails
+#       2. Bug - mismatch of N jobs running and msg getting processed
+#       3. Bug - when processing multiple messages, lock gets expired?!
 
 
 def parse_args() -> argparse.Namespace:

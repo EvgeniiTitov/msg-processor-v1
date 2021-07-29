@@ -1,4 +1,4 @@
-### POC before I embarrass myself at work
+### Quick POC before I embarrass myself at work
 
 Runner - uses consumer to get a message, message validator to validate 
 it is what we expect to get, message processor to do something to the message

@@ -11,9 +11,13 @@ from message_processor import process_message_using_docker_image_sample_1
 
 class App(LoggerMixin, SlackMixin):
     """
-    Application class requires 4 keys elements: Consumer, Publisher,
-    Message Validator and Message Processor. Different instances of the same
-    element could be used provided that they implement appropriate interfaces
+    Application class requires 4 keys elements:
+    - Consumer,
+    - Publisher,
+    - Message Validator and
+    - Message Processor.
+    Different implementations of the same element could be used provided that
+    they implement appropriate interfaces that the Runner relies on
     """
 
     def __init__(
@@ -39,24 +43,24 @@ class App(LoggerMixin, SlackMixin):
             raise ValueError("Sleeping time to be a positive integer")
         self._sleep = sleep_time_between_health_reports
 
-        consumer = AzureConsumer()
+        self._consumer = AzureConsumer()
         self.logger.info("Consumer initialized")
 
-        publisher = AzurePublisher()
+        self._publisher = AzurePublisher()
         self.logger.info("Publisher initialized")
 
         self._runner = RunnerV1(
             concur_processing_jobs=concur_processing_jobs,
             acknowledgement_required=acknowledgement_required,
-            consumer=consumer,
-            publisher=publisher,
+            consumer=self._consumer,
+            publisher=self._publisher,
             message_validator=validate_message,
             message_processor=process_message_using_docker_image_sample_1,
         )
         self.logger.info(f"Runner initialized")
 
         self._processor_thread = threading.Thread(
-            target=self._runner.process_messages
+            target=self._runner.process_messages_loop
         )
         self._processor_thread.start()
         self.logger.info("Runner thread started")
@@ -84,4 +88,5 @@ class App(LoggerMixin, SlackMixin):
     def stop_processor(self) -> None:
         self._runner.stop()
         self._processor_thread.join()
+        del self._consumer  # Force resource release
         self.logger.info("Runner stopped")
